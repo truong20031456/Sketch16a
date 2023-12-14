@@ -1,117 +1,104 @@
-#define BLYNK_TEMPLATE_ID "TMPL6RQ3tnFal"
-#define BLYNK_TEMPLATE_NAME "IOtsensorgas"
-
-#include <WiFiManager.h>
-#include <ESP8266WiFi.h>
+#include <PostgreSQLClient.h>
+#include <WiFiClientSecure.h>
 #include <Firebase_ESP_Client.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
-#include <BlynkSimpleEsp8266.h>
-#include "addons/TokenHelper.h"
-#include "addons/RTDBHelper.h"
 
-// Define the API key and URL for Firebase database
-#define API_KEY "Your_API_Key_Here"
-#define DATABASE_URL "https://your-database-url.firebaseio.com"
+// Constants for Firebase
+#define API_KEY "your_firebase_api_key"
+#define DATABASE_URL "your_firebase_database_url"
 
-// Use the NTP (Network Time Protocol) to get the time and date
-WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "pool.ntp.org");
+// Constants for PostgreSQL
+const char *host = "your-postgresql-host.render.com";
+const int port = 5432;
+const char *user = "postgres";
+const char *password = "your_postgres_password";
+const char *database = "your_database_name";
 
-// Declare Firebase database, authentication, and configuration objects
+const char *ssid = "your_wifi_ssid";
+const char *password_wifi = "your_wifi_password";
+
+// Firebase variables
 FirebaseData fbdo;
-FirebaseAuth auth;
 FirebaseConfig config;
+FirebaseAuth auth;
 FirebaseJson json;
 
-// Declare WiFiManager Object
-WiFiManager wifiManager;
-bool signupOK = false;
-
-// Define the pin of the photoresistor
-int photoresistor = A0;
-
-// Define the function to get the datetime
-String getDatetime() {
-    timeClient.update();
-    time_t epochTime = timeClient.getEpochTime();
-    struct tm *ptm = gmtime(&epochTime);
-    int monthDay = ptm->tm_mday;
-    int currentMonth = ptm->tm_mon + 1;
-    int currentYear = ptm->tm_year + 1900;
-    String formattedTime = timeClient.getFormattedTime();
-    return String(monthDay) + "-" + String(currentMonth) + "-" + String(currentYear) + " " + formattedTime;
-}
+// PostgreSQL variables
+WiFiClientSecure client;
+PostgreSQLClient pg_client(client);
 
 void setup() {
     Serial.begin(115200);
-    timeClient.begin();
-    timeClient.setTimeOffset(25200);
-    pinMode(photoresistor, INPUT);
-
-    bool res = wifiManager.autoConnect("truong");
-    if (!res) {
-        Serial.println("Failed to connect");
-    } else {
-        Serial.println("Connected...yay");
-    }
-
-    Serial.println("Connecting to Wi-Fi");
-    Serial.println("Connected with IP: ");
-
-    // Assign the API key (required)
-    config.api_key = API_KEY;
-    // Assign the RTDB URL (required)
-    config.database_url = DATABASE_URL;
-
-    /* 
-    Sign up on Firebase
-    In this lab, the database is opened for anonymous
-    For better security, set up a username and password
-    and fill it in the statement Firebase.signUp
-    */
-    if (Firebase.signUp(&config, &auth, "", "")) {
-        Serial.println("Sign up success");
-        signupOK = true;
-    } else {
-        Serial.printf("%s\n", config.signer.signupError.message.c_str());
-    }
-
-    // Assign the callback function for the long-running token generation task
-    config.token_status_callback = tokenStatusCallback;
-    Firebase.begin(&config, &auth);
-    Firebase.reconnectWiFi(true);
+    connectWiFi(); // Function to connect to WiFi
+    connectToPostgreSQL(); // Function to connect to PostgreSQL
+    initializeFirebase(); // Function to initialize Firebase
 }
 
-// Define path in the database
-String prPath = "/photoresistor";
-String timePath = "/time"; // Changed this to a separate path
-String databasePath = "/Lab8";
-String parentPath;
-
 void loop() {
-    int pr_value = analogRead(photoresistor);
-    Serial.print("Photoresistor value: ");
-    Serial.println(pr_value);
+    // Example: If sensorValue is 100, send data to both Firebase and PostgreSQL
+    int sensorValue = 100;
 
-    if (Firebase.ready() && signupOK) {
-        delay(5000);
-        String datetime = getDatetime();
-        Serial.print("Time: ");
-        Serial.println(datetime);
+    sendDataToFirebase(sensorValue);
+    sendDataToPostgreSQL(sensorValue);
 
-        parentPath = databasePath + datetime; // Concatenated strings without "/"
-        // Set the JSON string
-        json.set(timePath.c_str(), datetime);
-        json.set(prPath.c_str(), pr_value);
-        // Send data to the real-time database
-        if (Firebase.RTDB.setJSON(&fbdo, parentPath.c_str(), &json)) {
-            Serial.println("PASSED");
-            Serial.println("PATH: " + fbdo.dataPath());
-            Serial.println("TYPE: " + fbdo.dataType());
-        } else {
-            Serial.println("FAILED");
-            Serial.println("REASON: " + fbdo.errorReason());
-        }
+    delay(5000); // Adjust delay according to your requirements
+}
+
+void connectWiFi() {
+    Serial.println();
+    Serial.print("Connecting to WiFi");
+
+    WiFi.begin(ssid, password_wifi);
+
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+
+    Serial.println("");
+    Serial.println("WiFi connected");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+}
+
+void connectToPostgreSQL() {
+    if (pg_client.connect(host, port, user, password, database)) {
+        Serial.println("Connected to PostgreSQL!");
+    } else {
+        Serial.println("Connection to PostgreSQL failed!");
+    }
+}
+
+void initializeFirebase() {
+    config.api_key = API_KEY;
+    config.database_url = DATABASE_URL;
+
+    if (Firebase.signUp(&config, &auth, "", "")) {
+        Serial.println("Firebase initialized");
+    } else {
+        Serial.println("Firebase initialization failed");
+    }
+}
+
+void sendDataToFirebase(int sensorValue) {
+    String dataPath = "/sensorData";
+
+    json.set("value", sensorValue);
+
+    if (Firebase.RTDB.setJSON(&fbdo, dataPath, &json)) {
+        Serial.println("Data sent to Firebase successfully");
+    } else {
+        Serial.println("Failed to send data to Firebase");
+    }
+}
+
+void sendDataToPostgreSQL(int sensorValue) {
+    String query = "INSERT INTO your_table_name (sensor_data_column) VALUES (" + String(sensorValue) + ");";
+
+    if (pg_client.execute(query.c_str())) {
+        Serial.println("Data sent to PostgreSQL successfully");
+    } else {
+        Serial.println("Failed to send data to PostgreSQL");
     }
 }
