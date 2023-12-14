@@ -1,17 +1,20 @@
-# Sử dụng một base image có sẵn
-FROM ubuntu:20.04
+# Sử dụng một base image chứa Node.js
+FROM node:14
 
-# Cài đặt một số packages và dependencies
-RUN apt-get update && apt-get install -y \
-    package1 \
-    package2 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Thiết lập một thư mục làm việc
+# Thiết lập thư mục làm việc trong container
 WORKDIR /app
 
-# Sao chép các file cần thiết vào container
+# Sao chép package.json và package-lock.json vào container
+COPY package*.json ./
+
+# Cài đặt dependencies của ứng dụng
+RUN npm install
+
+# Sao chép mã nguồn của ứng dụng vào container
 COPY . .
 
-# Chạy một lệnh khi container được khởi động
-CMD ["bash"]
+# Mở port mà ứng dụng sẽ lắng nghe
+EXPOSE 3000
+
+# Khởi động ứng dụng khi container được chạy
+CMD ["npm", "start"]
