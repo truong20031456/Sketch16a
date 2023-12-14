@@ -1,0 +1,17 @@
+# Sử dụng một base image có sẵn
+FROM ubuntu:20.04
+
+# Cài đặt một số packages và dependencies
+RUN apt-get update && apt-get install -y \
+    package1 \
+    package2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Thiết lập một thư mục làm việc
+WORKDIR /app
+
+# Sao chép các file cần thiết vào container
+COPY . .
+
+# Chạy một lệnh khi container được khởi động
+CMD ["bash"]
