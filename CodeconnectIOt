@@ -1,0 +1,117 @@
+#define BLYNK_TEMPLATE_ID "TMPL6RQ3tnFal"
+#define BLYNK_TEMPLATE_NAME "IOtsensorgas"
+
+#include <WiFiManager.h>
+#include <ESP8266WiFi.h>
+#include <Firebase_ESP_Client.h>
+#include <NTPClient.h>
+#include <WiFiUdp.h>
+#include <BlynkSimpleEsp8266.h>
+#include "addons/TokenHelper.h"
+#include "addons/RTDBHelper.h"
+
+// Define the API key and URL for Firebase database
+#define API_KEY "Your_API_Key_Here"
+#define DATABASE_URL "https://your-database-url.firebaseio.com"
+
+// Use the NTP (Network Time Protocol) to get the time and date
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org");
+
+// Declare Firebase database, authentication, and configuration objects
+FirebaseData fbdo;
+FirebaseAuth auth;
+FirebaseConfig config;
+FirebaseJson json;
+
+// Declare WiFiManager Object
+WiFiManager wifiManager;
+bool signupOK = false;
+
+// Define the pin of the photoresistor
+int photoresistor = A0;
+
+// Define the function to get the datetime
+String getDatetime() {
+    timeClient.update();
+    time_t epochTime = timeClient.getEpochTime();
+    struct tm *ptm = gmtime(&epochTime);
+    int monthDay = ptm->tm_mday;
+    int currentMonth = ptm->tm_mon + 1;
+    int currentYear = ptm->tm_year + 1900;
+    String formattedTime = timeClient.getFormattedTime();
+    return String(monthDay) + "-" + String(currentMonth) + "-" + String(currentYear) + " " + formattedTime;
+}
+
+void setup() {
+    Serial.begin(115200);
+    timeClient.begin();
+    timeClient.setTimeOffset(25200);
+    pinMode(photoresistor, INPUT);
+
+    bool res = wifiManager.autoConnect("truong");
+    if (!res) {
+        Serial.println("Failed to connect");
+    } else {
+        Serial.println("Connected...yay");
+    }
+
+    Serial.println("Connecting to Wi-Fi");
+    Serial.println("Connected with IP: ");
+
+    // Assign the API key (required)
+    config.api_key = API_KEY;
+    // Assign the RTDB URL (required)
+    config.database_url = DATABASE_URL;
+
+    /* 
+    Sign up on Firebase
+    In this lab, the database is opened for anonymous
+    For better security, set up a username and password
+    and fill it in the statement Firebase.signUp
+    */
+    if (Firebase.signUp(&config, &auth, "", "")) {
+        Serial.println("Sign up success");
+        signupOK = true;
+    } else {
+        Serial.printf("%s\n", config.signer.signupError.message.c_str());
+    }
+
+    // Assign the callback function for the long-running token generation task
+    config.token_status_callback = tokenStatusCallback;
+    Firebase.begin(&config, &auth);
+    Firebase.reconnectWiFi(true);
+}
+
+// Define path in the database
+String prPath = "/photoresistor";
+String timePath = "/time"; // Changed this to a separate path
+String databasePath = "/Lab8";
+String parentPath;
+
+void loop() {
+    int pr_value = analogRead(photoresistor);
+    Serial.print("Photoresistor value: ");
+    Serial.println(pr_value);
+
+    if (Firebase.ready() && signupOK) {
+        delay(5000);
+        String datetime = getDatetime();
+        Serial.print("Time: ");
+        Serial.println(datetime);
+
+        parentPath = databasePath + datetime; // Concatenated strings without "/"
+        // Set the JSON string
+        json.set(timePath.c_str(), datetime);
+        json.set(prPath.c_str(), pr_value);
+        // Send data to the real-time database
+        if (Firebase.RTDB.setJSON(&fbdo, parentPath.c_str(), &json)) {
+            Serial.println("PASSED");
+            Serial.println("PATH: " + fbdo.dataPath());
+            Serial.println("TYPE: " + fbdo.dataType());
+        } else {
+            Serial.println("FAILED");
+            Serial.println("REASON: " + fbdo.errorReason());
+        }
+    }
+}
